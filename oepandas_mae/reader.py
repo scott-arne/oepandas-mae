@@ -17,6 +17,7 @@ from ._compat import (
     MolConverter,
     OEMaestroReaderConfig,
     TAG_NAME,
+    TAG_NONE,
     TAG_OWNER,
     TAG_TYPE,
     _add_smiles_columns,
@@ -81,12 +82,13 @@ def _read_maestro_data(
     """
     try:
         reader = MaestroReader(filepath)
+    except (FileNotFoundError, PermissionError):
+        raise
     except Exception:
         log.debug("Failed to create MaestroReader for %s, returning empty lists", filepath)
         return [], []
 
     converter = MolConverter()
-    converter.SetTagFormat(config.tags)
     converter.SetPerception(config.perception)
 
     mols: list[oechem.OEGraphMol] = []
@@ -100,9 +102,10 @@ def _read_maestro_data(
 
         # Extract CT properties with tag formatting applied in Python
         formatted_props: dict[str, str] = {}
-        for key in mmol.ct_properties.keys():
-            formatted_key = _format_tag_name(key, config.tags)
-            formatted_props[formatted_key] = mmol.ct_properties[key]
+        if config.tags != TAG_NONE:
+            for key in mmol.ct_properties.keys():
+                formatted_key = _format_tag_name(key, config.tags)
+                formatted_props[formatted_key] = mmol.ct_properties[key]
         ct_props_list.append(formatted_props)
 
         mmol = MaestroMol()
