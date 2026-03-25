@@ -7,19 +7,19 @@ from collections.abc import Iterable
 from typing import Literal
 
 import pandas as pd
-from openeye import oechem
 from oepandas.arrays import MoleculeArray, MoleculeDtype
+from openeye import oechem
 
 from ._compat import (
+    TAG_NAME,
+    TAG_NONE,
+    TAG_OWNER,
+    TAG_TYPE,
     Dataset,
     MaestroMol,
     MaestroReader,
     MolConverter,
     OEMaestroReaderConfig,
-    TAG_NAME,
-    TAG_NONE,
-    TAG_OWNER,
-    TAG_TYPE,
     _add_smiles_columns,
 )
 
@@ -103,7 +103,7 @@ def _read_maestro_data(
         # Extract CT properties with tag formatting applied in Python
         formatted_props: dict[str, str] = {}
         if config.tags != TAG_NONE:
-            for key in mmol.ct_properties.keys():
+            for key in mmol.ct_properties:
                 formatted_key = _format_tag_name(key, config.tags)
                 formatted_props[formatted_key] = mmol.ct_properties[key]
         ct_props_list.append(formatted_props)
@@ -134,7 +134,7 @@ def _group_conformers(
     current: oechem.OEMol | None = None
     current_props: dict[str, str] | None = None
 
-    for graph_mol, props in zip(mols, ct_props):
+    for graph_mol, props in zip(mols, ct_props, strict=True):
         mol = oechem.OEMol(graph_mol)
 
         if current is None:

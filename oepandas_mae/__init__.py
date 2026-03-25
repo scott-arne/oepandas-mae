@@ -32,26 +32,26 @@ log.setLevel(logging.INFO)
 
 # ---- Public API ----
 
-from .reader import read_mae  # noqa: E402
+# ---- Auto-registration ----
+import pandas as pd  # noqa: E402
+
 from ._compat import (  # noqa: E402
-    TAG_NONE,
-    TAG_TYPE,
-    TAG_OWNER,
-    TAG_NAME,
-    TAG_ALL,
-    PERCEPTION_NONE,
-    PERCEPTION_CONNECTIVITY,
-    PERCEPTION_RINGS,
-    PERCEPTION_BOND_ORDERS,
-    PERCEPTION_IMPLICIT_HYDROGENS,
-    PERCEPTION_FORMAL_CHARGES,
     PERCEPTION_ALL,
+    PERCEPTION_BOND_ORDERS,
+    PERCEPTION_CONNECTIVITY,
+    PERCEPTION_FORMAL_CHARGES,
+    PERCEPTION_IMPLICIT_HYDROGENS,
+    PERCEPTION_NONE,
+    PERCEPTION_RINGS,
+    TAG_ALL,
+    TAG_NAME,
+    TAG_NONE,
+    TAG_OWNER,
+    TAG_TYPE,
     OEMaestroReaderConfig,
 )
+from .reader import read_mae  # noqa: E402
 
-# ---- Auto-registration ----
-
-import pandas as pd  # noqa: E402
 pd.read_mae = read_mae
 
 try:
