@@ -1,10 +1,5 @@
-import unittest
+from oepandas_mae import __version__
 
 
-class TestVersion(unittest.TestCase):
-    def test_version(self):
-        """
-        Example test
-        """
-        from oepandas_mae import __version__
-        self.assertIsNotNone(__version__)
+def test_version():
+    assert __version__ is not None
