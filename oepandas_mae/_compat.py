@@ -20,6 +20,9 @@ from oemaestro import (
     PERCEPTION_ALL,
     OEMaestroReaderConfig,
     OEMaestroReader,
+    MaestroReader,
+    MaestroMol,
+    MolConverter,
 )
 
 __all__ = [
@@ -39,4 +42,7 @@ __all__ = [
     "PERCEPTION_ALL",
     "OEMaestroReaderConfig",
     "OEMaestroReader",
+    "MaestroReader",
+    "MaestroMol",
+    "MolConverter",
 ]
