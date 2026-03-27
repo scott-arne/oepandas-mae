@@ -57,6 +57,9 @@ def _format_tag_name(key: str, tag_flags: int) -> str:
     owner = key[2:second_underscore]
     name = key[second_underscore + 1:]
 
+    # Unescape Maestro's backslash-escaped underscores in free-text fields
+    name = name.replace("\\_", "_")
+
     parts: list[str] = []
     if tag_flags & TAG_TYPE:
         parts.append(type_char)
@@ -69,12 +72,14 @@ def _format_tag_name(key: str, tag_flags: int) -> str:
 
 def _read_maestro_data(
     filepath: str, config: OEMaestroReaderConfig
-) -> tuple[list[oechem.OEGraphMol], list[dict[str, str]]]:
-    """Read molecules and CT properties from a Maestro file.
+) -> tuple[list[oechem.OEGraphMol], list[dict[str, int | float | str]]]:
+    """Read molecules and typed CT properties from a Maestro file.
 
-    Uses the low-level ``MaestroReader`` and ``MolConverter`` to work around
-    the SWIG binding limitation where CT properties are not transferred as SD
-    data on the resulting OEGraphMol.
+    Uses the low-level ``MaestroReader`` and ``MolConverter`` to parse
+    Maestro structures.  CT properties are extracted from the converted
+    OEGraphMol's generic data (via ``GetDataIter``), which preserves the
+    native Maestro types (int for ``i_*``/``b_*``, float for ``r_*``,
+    str for ``s_*``).
 
     :param filepath: Path to a Maestro file.
     :param config: Reader configuration (tags and perception).
@@ -89,10 +94,11 @@ def _read_maestro_data(
         return [], []
 
     converter = MolConverter()
-    converter.SetPerception(config.perception)
+    converter.SetPerception(config.GetPerception())
 
+    tag_flags = config.GetTags()
     mols: list[oechem.OEGraphMol] = []
-    ct_props_list: list[dict[str, str]] = []
+    ct_props_list: list[dict[str, int | float | str]] = []
 
     mmol = MaestroMol()
     while reader.Read(mmol):
@@ -100,12 +106,16 @@ def _read_maestro_data(
         converter.Convert(mmol, mol)
         mols.append(mol)
 
-        # Extract CT properties with tag formatting applied in Python
-        formatted_props: dict[str, str] = {}
-        if config.tags != TAG_NONE:
-            for key in mmol.ct_properties:
-                formatted_key = _format_tag_name(key, config.tags)
-                formatted_props[formatted_key] = mmol.ct_properties[key]
+        # Extract typed CT properties from the converted molecule's generic data
+        formatted_props: dict[str, int | float | str] = {}
+        if tag_flags != TAG_NONE:
+            for diter in mol.GetDataIter():
+                try:
+                    key = oechem.OEGetTag(diter.GetTag())
+                    formatted_key = _format_tag_name(key, tag_flags)
+                    formatted_props[formatted_key] = diter.GetData()
+                except ValueError:
+                    continue
         ct_props_list.append(formatted_props)
 
         mmol = MaestroMol()
@@ -115,9 +125,9 @@ def _read_maestro_data(
 
 def _group_conformers(
     mols: list[oechem.OEGraphMol],
-    ct_props: list[dict[str, str]],
+    ct_props: list[dict[str, int | float | str]],
     conf_test,
-) -> tuple[list[oechem.OEMol], list[dict[str, str]]]:
+) -> tuple[list[oechem.OEMol], list[dict[str, int | float | str]]]:
     """Group consecutive single-conformer molecules into multi-conformer OEMol objects.
 
     Uses the conf test's CompareMols method to decide if consecutive molecules
@@ -130,9 +140,9 @@ def _group_conformers(
     :returns: Tuple of (grouped OEMol list, grouped CT properties list).
     """
     result_mols: list[oechem.OEMol] = []
-    result_props: list[dict[str, str]] = []
+    result_props: list[dict[str, int | float | str]] = []
     current: oechem.OEMol | None = None
-    current_props: dict[str, str] | None = None
+    current_props: dict[str, int | float | str] | None = None
 
     for graph_mol, props in zip(mols, ct_props, strict=True):
         mol = oechem.OEMol(graph_mol)
@@ -160,29 +170,34 @@ def _group_conformers(
 def _resolve_config(
     tags: int | None,
     perception: int | None,
+    num_threads: int | None,
     config: OEMaestroReaderConfig | None,
 ) -> OEMaestroReaderConfig:
     """Resolve an OEMaestroReaderConfig from kwargs and optional config object.
 
     :param tags: OEMaestroTag bitmask override.
     :param perception: OEMaestroPerception bitmask override.
+    :param num_threads: Number of threads override.
     :param config: Base config object.
     :returns: Resolved OEMaestroReaderConfig.
     """
+    resolved = OEMaestroReaderConfig()
+
     if config is not None:
-        resolved = OEMaestroReaderConfig()
-        resolved.tags = config.tags
-        resolved.perception = config.perception
+        resolved.SetTags(config.GetTags())
+        resolved.SetPerception(config.GetPerception())
+        resolved.SetNumThreads(config.GetNumThreads())
     else:
-        resolved = OEMaestroReaderConfig()
         # Default to TAG_NAME for clean column names (C++ default is TAG_ALL)
-        resolved.tags = TAG_NAME
+        resolved.SetTags(TAG_NAME)
 
     # Kwargs override config
     if tags is not None:
-        resolved.tags = tags
+        resolved.SetTags(tags)
     if perception is not None:
-        resolved.perception = perception
+        resolved.SetPerception(perception)
+    if num_threads is not None:
+        resolved.SetNumThreads(num_threads)
 
     return resolved
 
@@ -199,6 +214,7 @@ def read_mae(
     conformer_test: Literal["default", "absolute", "absolute_canonical", "isomeric", "omega"] = "default",
     tags: int | None = None,
     perception: int | None = None,
+    num_threads: int | None = None,
     config: OEMaestroReaderConfig | None = None,
 ) -> pd.DataFrame:
     """Read structures from a Maestro file into a DataFrame.
@@ -239,6 +255,7 @@ def read_mae(
     :param conformer_test: Conformer grouping strategy.
     :param tags: OEMaestroTag bitmask for column name formatting.
     :param perception: OEMaestroPerception bitmask.
+    :param num_threads: Number of threads for parallel reading. Defaults to min(2, cpu_count).
     :param config: OEMaestroReaderConfig base configuration.
     :returns: Pandas DataFrame with molecule, title, and data columns.
     :raises ValueError: If conformer_test is not a valid option.
@@ -254,7 +271,7 @@ def read_mae(
         title_column = None
 
     # ---- Resolve config ----
-    resolved_config = _resolve_config(tags, perception, config)
+    resolved_config = _resolve_config(tags, perception, num_threads, config)
 
     # ---- Normalize usecols ----
     if usecols is not None:

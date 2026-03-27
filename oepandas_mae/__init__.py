@@ -1,6 +1,6 @@
 import logging
 
-__version__ = "0.1.0"
+__version__ = "0.1.2"
 
 # ---- Logging ----
 
@@ -39,6 +39,7 @@ from ._compat import (  # noqa: E402
     PERCEPTION_ALL,
     PERCEPTION_BOND_ORDERS,
     PERCEPTION_CONNECTIVITY,
+    PERCEPTION_DEFAULT,
     PERCEPTION_FORMAL_CHARGES,
     PERCEPTION_IMPLICIT_HYDROGENS,
     PERCEPTION_NONE,
@@ -76,6 +77,7 @@ __all__ = [
     "PERCEPTION_BOND_ORDERS",
     "PERCEPTION_IMPLICIT_HYDROGENS",
     "PERCEPTION_FORMAL_CHARGES",
+    "PERCEPTION_DEFAULT",
     "PERCEPTION_ALL",
     "OEMaestroReaderConfig",
 ]
