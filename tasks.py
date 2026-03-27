@@ -5,22 +5,27 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.absolute()
 
-
 @task
 def test(c):
-    c.run(f'cd {ROOT} && {sys.executable} -m unittest')
+    """Run the test suite with pytest"""
+    c.run(f"{sys.executable} -m pytest tests/")
+
 
 @task
 def build(c):
-    c.run(f'rm -rf {ROOT / "dist"}')
-    c.run(f'cd {ROOT} && {sys.executable} -m build')
+    """Build distribution packages"""
+    c.run("rm -rf dist")
+    c.run(f"{sys.executable} -m build")
+
 
 @task
 def upload(c):
-    c.run(f'scp {ROOT}/dist/* hopi36.pri.bms.com:/web/msdpypi/packages/ && echo "Successfully uploaded..."')
+    """Upload package to PyPI (requires PyPI credentials configured)"""
+    c.run("rm -rf dist")
+    c.run(f"{sys.executable} -m build")
+    c.run(f"{sys.executable} -m twine upload dist/*")
+
 
 @task
-def deploy(c):
-    build(c)
-    upload(c)
-
+def publish(c):
+    c.run(f"cd {ROOT} && rm -rf dist/ && {sys.executable} -m build --wheel && {sys.executable} -m twine upload dist/*")
