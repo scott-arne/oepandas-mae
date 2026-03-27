@@ -83,7 +83,7 @@ df = read_mae("file.mae", numeric={"pdb_tfactor": "float", "atom_count": "intege
 Add SMILES string columns alongside the molecule objects:
 
 ```python
-df = read_mae("file.mae", add_smiles=True)
+df = oepd.read_mae("file.mae", add_smiles=True)
 # Creates a "Molecule SMILES" column
 ```
 
@@ -107,16 +107,17 @@ Available conformer tests:
 Maestro property keys follow a `type_owner_name` convention (e.g., `r_pdb_PDB_CRYST1_a`). By default, only the name portion is used as the column name. Control this with `tags`:
 
 ```python
-from oepandas_mae import read_mae, TAG_ALL, TAG_NAME, TAG_NONE
+import oepandas as oepd
+from oepandas_mae import TAG_ALL, TAG_NAME, TAG_NONE
 
 # Default: clean names only (e.g., "PDB_CRYST1_a")
-df = read_mae("file.mae")
+df = oepd.read_mae("file.mae")
 
 # Full Maestro keys (e.g., "r_pdb_PDB_CRYST1_a")
-df = read_mae("file.mae", tags=TAG_ALL)
+df = oepd.read_mae("file.mae", tags=TAG_ALL)
 
 # No data columns (molecules and titles only)
-df = read_mae("file.mae", tags=TAG_NONE)
+df = oepd.read_mae("file.mae", tags=TAG_NONE)
 ```
 
 ### Perception Control
@@ -126,8 +127,10 @@ Control post-parse chemical perception with the `perception` parameter:
 ```python
 from oepandas_mae import read_mae, PERCEPTION_NONE
 
-df = read_mae("file.mae", perception=PERCEPTION_NONE)
+df = oepd.read_mae("file.mae", perception=PERCEPTION_NONE)
 ```
+
+By default, only limited molecule perception occurs in order to respect what is specified in the Maestro file.
 
 ### Configuration Object
 
@@ -139,8 +142,8 @@ from oepandas_mae import read_mae, OEMaestroReaderConfig, TAG_ALL
 config = OEMaestroReaderConfig()
 config.tags = TAG_ALL
 
-df = read_mae("file.mae", config=config)
-df = read_mae("file.mae", config=config, tags=TAG_NAME)  # tags overrides config
+df = oepd.read_mae("file.mae", config=config)
+df = oepd.read_mae("file.mae", config=config, tags=TAG_NAME)  # tags overrides config
 ```
 
 ## License
