@@ -17,13 +17,19 @@ from oemaestro import (
     TAG_NONE,
     TAG_OWNER,
     TAG_TYPE,
+    WRITE_APPEND,
+    WRITE_CREATE,
     MaestroMol,
     MaestroReader,
     MolConverter,
     OEMaestroReader,
     OEMaestroReaderConfig,
+    OEMaestroTagConverter,
+    OEMaestroWriter,
+    OEMaestroWriterConfig,
 )
 from oepandas.pandas_extensions import Dataset, _add_smiles_columns
+from oepandas.util import create_molecule_to_string_writer, is_gz
 
 __all__ = [
     "Dataset",
@@ -46,4 +52,11 @@ __all__ = [
     "MaestroReader",
     "MaestroMol",
     "MolConverter",
+    "WRITE_CREATE",
+    "WRITE_APPEND",
+    "OEMaestroWriter",
+    "OEMaestroWriterConfig",
+    "OEMaestroTagConverter",
+    "create_molecule_to_string_writer",
+    "is_gz",
 ]
