@@ -1,4 +1,10 @@
 import pandas as pd
+import pytest
+from oepandas.arrays import MoleculeArray, MoleculeDtype
+from openeye import oechem
+
+from oepandas_mae import TAG_ALL
+from oepandas_mae.reader import read_mae
 
 
 def test_writer_compat_symbols_importable():
@@ -63,3 +69,267 @@ def test_format_value():
     assert _format_value(True, "b") == "1"
     assert _format_value(False, "b") == "0"
     assert _format_value("hello", "s") == "hello"
+
+
+def _make_mol(title="mol"):
+    """Build a minimal 2-atom OEMol with coordinates and a title."""
+    mol = oechem.OEMol()
+    c = mol.NewAtom(6)
+    o = mol.NewAtom(8)
+    mol.NewBond(c, o, 2)
+    mol.SetCoords(oechem.OEFloatArray([0.0, 0.0, 0.0, 1.2, 0.0, 0.0]))
+    mol.SetTitle(title)
+    return mol
+
+
+def _mol_frame(mols, **columns):
+    """Build a DataFrame with a MoleculeDtype 'Molecule' column plus extra columns."""
+    data = {"Molecule": pd.Series(MoleculeArray(mols), dtype=MoleculeDtype())}
+    data.update(columns)
+    return pd.DataFrame(data)
+
+
+def test_to_mae_registered_on_accessor():
+    import oepandas_mae  # noqa: F401
+
+    df = _mol_frame([_make_mol("a")])
+    assert hasattr(df.chem, "to_mae")
+    assert callable(df.chem.to_mae)
+
+
+def test_write_read_roundtrip_structure(tmp_path):
+    df = _mol_frame([_make_mol("aspirin"), _make_mol("caffeine")])
+    out = tmp_path / "out.mae"
+    df.chem.to_mae(out)
+
+    back = read_mae(out)
+    assert len(back) == 2
+    assert list(back["Title"]) == ["aspirin", "caffeine"]
+    assert all(m.NumAtoms() == 2 for m in back["Molecule"])
+
+
+def test_missing_molecule_column_raises(tmp_path):
+    df = pd.DataFrame({"NotMol": [1, 2]})
+    with pytest.raises(KeyError, match="not found"):
+        df.chem.to_mae(tmp_path / "x.mae")
+
+
+def test_non_molecule_column_raises(tmp_path):
+    df = pd.DataFrame({"Molecule": [1, 2]})
+    with pytest.raises(TypeError, match="MoleculeDtype"):
+        df.chem.to_mae(tmp_path / "x.mae")
+
+
+def test_type_preservation_roundtrip(tmp_path):
+    df = _mol_frame(
+        [_make_mol("m")],
+        count=pd.array([42], dtype="int64"),
+        energy=pd.array([3.5], dtype="float64"),
+        active=pd.array([True], dtype="bool"),
+        name=pd.array(["hello"], dtype="object"),
+    )
+    out = tmp_path / "typed.mae"
+    df.chem.to_mae(out)
+
+    back = read_mae(out, tags=TAG_ALL)
+    row = back.iloc[0]
+    assert row["i_user_count"] == 42
+    assert row["r_user_energy"] == 3.5
+    assert int(row["b_user_active"]) == 1
+    assert row["s_user_name"] == "hello"
+
+
+def test_string_column_roundtrip(tmp_path):
+    df = _mol_frame([_make_mol("m")], label=pd.array(["abc"], dtype="object"))
+    out = tmp_path / "s.mae"
+    df.chem.to_mae(out)
+
+    back = read_mae(out)
+    assert back.iloc[0]["label"] == "abc"
+
+
+def test_columns_selection_filters_data_columns(tmp_path):
+    df = _mol_frame(
+        [_make_mol("m")],
+        keep=pd.array([1], dtype="int64"),
+        drop=pd.array([2], dtype="int64"),
+    )
+    out = tmp_path / "sel.mae"
+    df.chem.to_mae(out, columns=["keep"])
+
+    back = read_mae(out, tags=TAG_ALL)
+    assert "i_user_keep" in back.columns
+    assert "i_user_drop" not in back.columns
+
+
+def test_default_owner_used_in_keys(tmp_path):
+    df = _mol_frame([_make_mol("m")], score=pd.array([1.0], dtype="float64"))
+    out = tmp_path / "own.mae"
+    df.chem.to_mae(out, default_owner="myapp")
+
+    back = read_mae(out, tags=TAG_ALL)
+    assert "r_myapp_score" in back.columns
+
+
+def test_title_column_used_when_present(tmp_path):
+    df = _mol_frame([_make_mol("intrinsic")], Title=["override"])
+    out = tmp_path / "t.mae"
+    df.chem.to_mae(out)
+
+    back = read_mae(out)
+    assert back.iloc[0]["Title"] == "override"
+
+
+def test_missing_default_title_uses_intrinsic(tmp_path):
+    df = _mol_frame([_make_mol("intrinsic")])  # no "Title" column
+    out = tmp_path / "t2.mae"
+    df.chem.to_mae(out)  # default title_column="Title" absent -> skip silently
+
+    back = read_mae(out)
+    assert back.iloc[0]["Title"] == "intrinsic"
+
+
+def test_missing_nondefault_title_raises(tmp_path):
+    df = _mol_frame([_make_mol("m")])
+    with pytest.raises(KeyError, match="Title column"):
+        df.chem.to_mae(tmp_path / "t3.mae", title_column="Name")
+
+
+def test_key_collision_raises(tmp_path):
+    df = _mol_frame(
+        [_make_mol("m")],
+        count=pd.array([1], dtype="int64"),          # -> i_user_count
+        **{"i_user_count": pd.array([2], dtype="int64")},  # full key -> i_user_count
+    )
+    with pytest.raises(ValueError, match="collision"):
+        df.chem.to_mae(tmp_path / "c.mae")
+
+
+def test_none_molecule_does_not_raise(tmp_path):
+    df = _mol_frame([_make_mol("a"), None])
+    out = tmp_path / "n.mae"
+    df.chem.to_mae(out)  # None -> empty OEGraphMol; must not raise
+
+    back = read_mae(out)
+    assert "a" in list(back["Title"])
+
+
+def test_empty_dataframe_writes_empty_file(tmp_path):
+    empty = _mol_frame([])
+    out = tmp_path / "empty.mae"
+    empty.chem.to_mae(out)
+
+    back = read_mae(out)
+    assert len(back) == 0
+    assert "Molecule" in back.columns
+
+
+def test_append_mode_appends(tmp_path):
+    out = tmp_path / "app.mae"
+    _mol_frame([_make_mol("first")]).chem.to_mae(out)
+    _mol_frame([_make_mol("second")]).chem.to_mae(out, append=True)
+
+    back = read_mae(out)
+    assert list(back["Title"]) == ["first", "second"]
+
+
+def test_append_gzip_raises(tmp_path):
+    df = _mol_frame([_make_mol("m")])
+    with pytest.raises(ValueError, match="append"):
+        df.chem.to_mae(tmp_path / "x.mae.gz", append=True)
+
+
+def test_gzip_output_roundtrip(tmp_path):
+    df = _mol_frame([_make_mol("g")], val=pd.array([7], dtype="int64"))
+    out = tmp_path / "out.mae.gz"
+    df.chem.to_mae(out)
+
+    back = read_mae(out, tags=TAG_ALL)
+    assert back.iloc[0]["i_user_val"] == 7
+
+
+def test_multiconformer_roundtrip(tmp_path, conformers_mae):
+    df = read_mae(conformers_mae, conformer_test="absolute")  # 1 grouped multi-conf row
+    assert df.iloc[0]["Molecule"].NumConfs() == 2
+    out = tmp_path / "conf.mae"
+    df.chem.to_mae(out)
+
+    back = read_mae(out, conformer_test="absolute")
+    assert len(back) == 1
+    assert back.iloc[0]["Molecule"].NumConfs() == 2
+
+
+def test_fixture_roundtrips(tmp_path, simple_mae, multi_mae, protein_mae, protein_maegz, conformers_mae):
+    for src in (simple_mae, multi_mae, protein_mae, protein_maegz, conformers_mae):
+        df = read_mae(src, tags=TAG_ALL)  # full keys -> exact passthrough, no owner drift
+        out = tmp_path / f"{src.stem}_out.mae"
+        df.chem.to_mae(out)
+        back = read_mae(out, tags=TAG_ALL)
+        assert len(back) == len(df)
+        assert list(back["Title"]) == list(df["Title"])
+        assert [m.NumAtoms() for m in back["Molecule"]] == [m.NumAtoms() for m in df["Molecule"]]
+        assert [m.NumBonds() for m in back["Molecule"]] == [m.NumBonds() for m in df["Molecule"]]
+
+
+def test_coordinates_roundtrip(tmp_path, simple_mae):
+    df = read_mae(simple_mae)
+    mol = df.iloc[0]["Molecule"]
+    original = {a.GetIdx(): tuple(round(c, 3) for c in mol.GetCoords(a)) for a in mol.GetAtoms()}
+
+    out = tmp_path / "coords.mae"
+    df.chem.to_mae(out)
+    back = read_mae(out)
+    back_mol = back.iloc[0]["Molecule"]
+    for atom in back_mol.GetAtoms():
+        x, y, z = back_mol.GetCoords(atom)
+        ox, oy, oz = original[atom.GetIdx()]
+        assert abs(x - ox) < 0.01
+        assert abs(y - oy) < 0.01
+        assert abs(z - oz) < 0.01
+
+
+def test_custom_molecule_and_title_columns(tmp_path):
+    df = _mol_frame([_make_mol("keep-title")])
+    df = df.rename(columns={"Molecule": "Mol"})
+    df["Name"] = ["renamed"]
+    out = tmp_path / "custom.mae"
+    df.chem.to_mae(out, molecule_column="Mol", title_column="Name")
+
+    back = read_mae(out)
+    assert back.iloc[0]["Title"] == "renamed"
+    assert back.iloc[0]["Molecule"].NumAtoms() == 2
+
+
+def test_columns_selection_single_string(tmp_path):
+    df = _mol_frame(
+        [_make_mol("m")],
+        keep=pd.array([1], dtype="int64"),
+        drop=pd.array([2], dtype="int64"),
+    )
+    out = tmp_path / "sel_str.mae"
+    df.chem.to_mae(out, columns="keep")
+
+    back = read_mae(out, tags=TAG_ALL)
+    assert "i_user_keep" in back.columns
+    assert "i_user_drop" not in back.columns
+
+
+def test_object_listlike_value_does_not_raise(tmp_path):
+    df = _mol_frame([_make_mol("m")], payload=pd.Series([[1, 2]], dtype="object"))
+    out = tmp_path / "obj.mae"
+    df.chem.to_mae(out)  # list-like object cell -> str(value); must not raise
+
+    back = read_mae(out)
+    assert back.iloc[0]["payload"] == "[1, 2]"
+
+
+def test_preexisting_sd_data_does_not_leak(tmp_path):
+    mol = _make_mol("m")
+    oechem.OESetSDData(mol, "s_user_stale", "leaked")  # not from any DataFrame column
+    df = _mol_frame([mol], keep=pd.array([1], dtype="int64"))
+    out = tmp_path / "leak.mae"
+    df.chem.to_mae(out)
+
+    back = read_mae(out, tags=TAG_ALL)
+    assert "i_user_keep" in back.columns
+    assert "s_user_stale" not in back.columns  # stale SD data was cleared

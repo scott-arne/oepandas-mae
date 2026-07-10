@@ -57,7 +57,12 @@ pd.read_mae = read_mae
 
 try:
     import oepandas  # noqa: E402
+    from oepandas.pandas_extensions import OEDataFrameAccessor  # noqa: E402
+
+    from .writer import to_mae  # noqa: E402
+
     oepandas.read_mae = read_mae
+    OEDataFrameAccessor.to_mae = to_mae
 except ImportError:
     pass
 
