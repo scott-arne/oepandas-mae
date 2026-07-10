@@ -156,13 +156,13 @@ def _group_conformers(
             current.NewConf(mol)
         else:
             result_mols.append(current)
-            result_props.append(current_props)
+            result_props.append(current_props)  # type: ignore[arg-type]
             current = mol
             current_props = props
 
     if current is not None:
         result_mols.append(current)
-        result_props.append(current_props)
+        result_props.append(current_props)  # type: ignore[arg-type]
 
     return result_mols, result_props
 
@@ -296,10 +296,10 @@ def read_mae(
 
     # ---- Handle empty file ----
     if len(mols_list) == 0:
-        data = {molecule_column: pd.Series(dtype=MoleculeDtype())}
+        empty: dict[str, pd.Series] = {molecule_column: pd.Series(dtype=MoleculeDtype())}
         if title_column is not None:
-            data[title_column] = pd.Series(dtype=str)
-        return pd.DataFrame(data)
+            empty[title_column] = pd.Series(dtype=str)
+        return pd.DataFrame(empty)
 
     # ---- Build MoleculeArray ----
     mols = MoleculeArray(mols_list)

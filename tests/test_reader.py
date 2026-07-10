@@ -1,13 +1,13 @@
 import pandas as pd
 import pytest
-from openeye import oechem
 from oepandas.arrays import MoleculeDtype
+from openeye import oechem
 
 from oepandas_mae._compat import (
+    PERCEPTION_NONE,
     TAG_ALL,
     TAG_NAME,
     TAG_NONE,
-    PERCEPTION_NONE,
     OEMaestroReaderConfig,
 )
 from oepandas_mae.reader import read_mae
@@ -245,6 +245,7 @@ class TestReadMaeRegistration:
     def test_oepandas_read_mae_registered(self):
         """oepandas.read_mae should be available after importing oepandas_mae."""
         import oepandas
+
         import oepandas_mae  # noqa: F401
         assert hasattr(oepandas, "read_mae")
         assert callable(oepandas.read_mae)
