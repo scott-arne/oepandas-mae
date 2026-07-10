@@ -103,7 +103,7 @@ def _read_maestro_data(
     mmol = MaestroMol()
     while reader.Read(mmol):
         mol = oechem.OEGraphMol()
-        converter.Convert(mmol, mol)
+        converter.ConvertToOE(mol, mmol)
         mols.append(mol)
 
         # Extract typed CT properties from the converted molecule's generic data
