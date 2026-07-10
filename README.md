@@ -1,7 +1,7 @@
 # oepandas-mae
 
-Maestro file format support for [oepandas](https://github.com/scott-arne/oepandas). Reads `.mae`, `.mae.gz`, and
-`.maegz` files into pandas DataFrames following oepandas conventions.
+Maestro file format support for [oepandas](https://github.com/scott-arne/oepandas). Reads and writes `.mae`, `.mae.gz`, and
+`.maegz` files as pandas DataFrames following oepandas conventions.
 
 **This only requires a valid OpenEye Toolkit license. You do not need to have any Schrodinger software installed.**
 
@@ -19,7 +19,7 @@ Or install standalone:
 pip install oepandas-mae
 ```
 
-**Requirements:** Python 3.10+, oepandas >= 3.2.0, oemaestro >= 0.1.0, OpenEye Toolkits
+**Requirements:** Python 3.10+, oepandas >= 3.2.0, oemaestro >= 0.8.1, OpenEye Toolkits
 
 ## Quick Start
 
@@ -145,6 +145,40 @@ config.tags = TAG_ALL
 df = oepd.read_mae("file.mae", config=config)
 df = oepd.read_mae("file.mae", config=config, tags=TAG_NAME)  # tags overrides config
 ```
+
+## Writing Maestro Files
+
+Write a DataFrame back to a Maestro file with the `chem` accessor:
+
+```python
+import oepandas as oepd
+
+df = oepd.read_mae("tests/assets/5.maegz")
+df.chem.to_mae("out.mae")
+```
+
+Data column values are stored as typed Maestro CT properties. The Maestro type is
+inferred from each column's pandas dtype (`int` → `i_`, `float` → `r_`, `bool` →
+`b_`, everything else → `s_`), so numeric columns round-trip as numbers. A column
+whose name is already a full Maestro key (e.g. `r_m_pdb_tfactor`) is written
+verbatim, preserving its exact type and owner.
+
+```python
+# Choose the molecule/title columns and restrict which data columns are written
+df.chem.to_mae("out.mae", molecule_column="Molecule", title_column="Title", columns=["NumDonors"])
+
+# Compressed output (auto-detected from the extension)
+df.chem.to_mae("out.mae.gz")
+
+# Append to an existing file (not supported for compressed files)
+df.chem.to_mae("out.mae", append=True)
+
+# Write the DataFrame index and set the owner segment for clean column names
+df.chem.to_mae("out.mae", index=True, index_tag="row_id", default_owner="myapp")
+```
+
+Extra molecule columns are written as SMILES strings. If two columns resolve to the
+same Maestro key, `to_mae` raises a `ValueError` rather than silently dropping data.
 
 ## License
 
