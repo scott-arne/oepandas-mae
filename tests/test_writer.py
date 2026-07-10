@@ -450,3 +450,16 @@ def test_secondary_collision_with_data_column_raises(tmp_path):
     df["s_user_Other"] = pd.array(["x"], dtype="object")  # full key -> s_user_Other -> collision
     with pytest.raises(ValueError, match="collision"):
         df.chem.to_mae(tmp_path / "sc.mae")
+
+
+def test_overwrite_through_symlink_updates_target_not_link(tmp_path):
+    import os
+    real = tmp_path / "real.mae"
+    link = tmp_path / "link.mae"
+    _mol_frame([_make_mol("orig")]).chem.to_mae(real)
+    os.symlink(real, link)
+    _mol_frame([_make_mol("updated")]).chem.to_mae(link)  # write through the symlink
+    assert link.is_symlink(), "symlink must be preserved, not replaced by a regular file"
+    assert os.path.realpath(link) == os.path.realpath(real)
+    from oepandas_mae.reader import read_mae
+    assert list(read_mae(real)["Title"]) == ["updated"]  # referent updated

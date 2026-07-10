@@ -120,6 +120,10 @@ def to_mae(
     :param index_tag: Key used when ``index`` is True.
     :param default_owner: Owner segment for constructed (clean-name) keys.
     :param append: If True, append to an existing file (not allowed for gzip).
+        **Note:** Append mode writes directly to the file and is NOT atomic: if writing
+        fails partway through, previously written molecules from this call may remain
+        in the file. Create mode (the default) is atomic — on failure the existing
+        file is left unchanged.
     :returns: None.
     :raises KeyError: If the molecule column or a named column is absent.
     :raises TypeError: If the molecule column is not a ``MoleculeDtype``.
@@ -259,14 +263,16 @@ def to_mae(
     if append:
         _write_rows(fp_str)
     else:
-        target = Path(fp_str)
+        # Resolve symlinks so atomic overwrite updates the referent, not the link.
+        real_target = os.path.realpath(fp_str)
         if fp_str.endswith(".mae.gz"):
             suffix = ".mae.gz"
         elif fp_str.endswith(".maegz"):
             suffix = ".maegz"
         else:
             suffix = ".mae"
-        fd, tmp_path = tempfile.mkstemp(dir=str(target.parent), prefix="." + target.name + ".", suffix=suffix)
+        target_dir = os.path.dirname(real_target) or "."
+        fd, tmp_path = tempfile.mkstemp(dir=target_dir, prefix="." + os.path.basename(real_target) + ".", suffix=suffix)
         os.close(fd)
         try:
             _write_rows(tmp_path)
@@ -274,10 +280,10 @@ def to_mae(
             with contextlib.suppress(OSError):
                 os.remove(tmp_path)
             raise
-        if target.exists():
-            os.chmod(tmp_path, stat.S_IMODE(target.stat().st_mode))
+        if os.path.exists(real_target):
+            os.chmod(tmp_path, stat.S_IMODE(os.stat(real_target).st_mode))
         else:
             current_umask = os.umask(0o022)
             os.umask(current_umask)
             os.chmod(tmp_path, 0o666 & ~current_umask)
-        os.replace(tmp_path, fp_str)
+        os.replace(tmp_path, real_target)
