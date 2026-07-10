@@ -333,3 +333,34 @@ def test_preexisting_sd_data_does_not_leak(tmp_path):
     back = read_mae(out, tags=TAG_ALL)
     assert "i_user_keep" in back.columns
     assert "s_user_stale" not in back.columns  # stale SD data was cleared
+
+
+def test_full_key_boolean_string_false_not_flipped(tmp_path):
+    df = _mol_frame([_make_mol("m")], **{"b_user_flag": pd.array(["0"], dtype="object")})
+    out = tmp_path / "boolstr.mae"
+    df.chem.to_mae(out)
+    back = read_mae(out, tags=TAG_ALL)
+    # b_ reads back as int 0/1; "0" must stay 0, not flip to 1
+    assert int(back.iloc[0]["b_user_flag"]) == 0
+
+
+def test_full_key_boolean_ambiguous_string_raises(tmp_path):
+    df = _mol_frame([_make_mol("m")], **{"b_user_flag": pd.array(["maybe"], dtype="object")})
+    with pytest.raises(ValueError, match="boolean"):
+        df.chem.to_mae(tmp_path / "boolbad.mae")
+
+
+def test_write_failure_raises(tmp_path, monkeypatch):
+    import oepandas_mae.writer as writer_mod
+
+    class _FailWriter:
+        def __init__(self, *a, **k): pass
+        def write(self, mol): return False
+        def close(self): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    monkeypatch.setattr(writer_mod, "OEMaestroWriter", _FailWriter)
+    df = _mol_frame([_make_mol("m")])
+    with pytest.raises(OSError, match="Failed to write"):
+        df.chem.to_mae(tmp_path / "fail.mae")

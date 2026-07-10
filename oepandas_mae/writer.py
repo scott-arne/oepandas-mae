@@ -71,6 +71,13 @@ def _format_value(value, type_char: str) -> str:
     :returns: The textual representation to store as SD data.
     """
     if type_char == "b":
+        if isinstance(value, str):
+            token = value.strip().lower()
+            if token in ("1", "true", "t", "yes", "y"):
+                return "1"
+            if token in ("0", "false", "f", "no", "n"):
+                return "0"
+            raise ValueError(f"Cannot interpret {value!r} as a boolean for a Maestro 'b_' property")
         return "1" if bool(value) else "0"
     if type_char == "i":
         return str(int(value))
@@ -177,7 +184,7 @@ def to_mae(
 
     # ---- Write rows ----
     with OEMaestroWriter(fp_str, config) as writer:
-        for _row_index, row in df.iterrows():
+        for row_index, row in df.iterrows():
             mol = row[molecule_column]
             if isinstance(mol, oechem.OEMol):
                 out = oechem.OEGraphMol(mol) if mol.NumConfs() == 1 else oechem.OEMol(mol)
@@ -201,4 +208,5 @@ def to_mae(
                 key, type_char = data_keys[col]
                 oechem.OESetSDData(out, key, _format_value(value, type_char))
 
-            writer.write(out)
+            if not writer.write(out):
+                raise OSError(f"Failed to write molecule at row {row_index} to {fp_str!r}")
