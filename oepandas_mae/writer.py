@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import stat
 import tempfile
 from collections.abc import Iterable
 from pathlib import Path
@@ -232,4 +233,10 @@ def to_mae(
             with contextlib.suppress(OSError):
                 os.remove(tmp_path)
             raise
+        if target.exists():
+            os.chmod(tmp_path, stat.S_IMODE(target.stat().st_mode))
+        else:
+            current_umask = os.umask(0o022)
+            os.umask(current_umask)
+            os.chmod(tmp_path, 0o666 & ~current_umask)
         os.replace(tmp_path, fp_str)

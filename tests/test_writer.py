@@ -377,3 +377,18 @@ def test_create_mode_failure_preserves_existing_file(tmp_path):
     assert out.read_bytes() == original_bytes
     # And no leftover temp files in the directory.
     assert [p.name for p in tmp_path.iterdir()] == ["existing.mae"]
+
+
+def test_overwrite_preserves_file_permissions(tmp_path):
+    import os
+    import stat
+
+    out = tmp_path / "shared.mae"
+    _mol_frame([_make_mol("first")]).chem.to_mae(out)
+    os.chmod(out, 0o644)
+    _mol_frame([_make_mol("second")]).chem.to_mae(out)  # atomic overwrite
+    mode = stat.S_IMODE(out.stat().st_mode)
+    assert mode == 0o644, f"expected 0o644, got {oct(mode)}"
+    # sanity: the overwrite actually happened
+    from oepandas_mae.reader import read_mae
+    assert list(read_mae(out)["Title"]) == ["second"]
