@@ -20,6 +20,7 @@ from ._compat import (
     OEMaestroTagConverter,
     OEMaestroWriter,
     OEMaestroWriterConfig,
+    create_molecule_to_string_writer,
     is_gz,
 )
 
@@ -155,10 +156,14 @@ def to_mae(
         if col not in df.columns:
             raise KeyError(f"Column {col!r} not found in DataFrame")
 
-    # ---- Data columns (secondary molecule columns handled in a later change) ----
+    # ---- Classify secondary molecule columns vs data columns ----
+    secondary_columns = [
+        c for c in selected
+        if c != molecule_column and isinstance(df[c].dtype, MoleculeDtype)
+    ]
     data_columns = [
         c for c in selected
-        if c != molecule_column and not isinstance(df[c].dtype, MoleculeDtype)
+        if c != molecule_column and c not in secondary_columns
     ]
 
     # ---- Resolve output keys and detect collisions before writing anything ----
@@ -178,12 +183,40 @@ def to_mae(
         _register(key, f"column {col!r}")
         data_keys[col] = (key, type_char)
 
+    secondary_keys: dict[str, str] = {}
+    for col in secondary_columns:
+        # Resolve like data columns so full-key names pass through and all keys are
+        # collision-checked. A clean molecule column (MoleculeDtype -> "s") yields
+        # s_{default_owner}_{col} for its SMILES string.
+        key, _ = _resolve_maestro_key(col, df[col].dtype, default_owner)
+        _register(key, f"secondary molecule column {col!r}")
+        secondary_keys[col] = key
+
+    index_key: str | None = None
+    if index:
+        index_key = (
+            index_tag if _TAG_CONVERTER.IsFullMaestroKey(index_tag)
+            else f"s_{default_owner}_{index_tag}"
+        )
+        _register(index_key, "index")
+
     # ---- Open the writer ----
     fp_str = str(fp)
     if append and is_gz(Path(fp_str)):
         raise ValueError("append=True is not supported for gzip-compressed Maestro files")
     config = OEMaestroWriterConfig()
     config.SetMode(WRITE_APPEND if append else WRITE_CREATE)
+
+    secondary_flavor = (
+        secondary_molecule_flavor if isinstance(secondary_molecule_flavor, int) else None
+    )
+    secondary_to_string = create_molecule_to_string_writer(
+        fmt=secondary_molecules_as,
+        flavor=secondary_flavor,
+        gzip=False,
+        b64encode=False,
+        strip=True,
+    )
 
     # ---- Write rows ----
     def _write_rows(dest_path):
@@ -203,6 +236,14 @@ def to_mae(
 
                 if write_title:
                     out.SetTitle(str(row[title_column]))
+
+                if index_key is not None:
+                    oechem.OESetSDData(out, index_key, str(row_index))
+
+                for col in secondary_columns:
+                    value = row[col]
+                    if value is not None:
+                        oechem.OESetSDData(out, secondary_keys[col], secondary_to_string(value))
 
                 for col in data_columns:
                     value = row[col]

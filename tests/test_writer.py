@@ -392,3 +392,61 @@ def test_overwrite_preserves_file_permissions(tmp_path):
     # sanity: the overwrite actually happened
     from oepandas_mae.reader import read_mae
     assert list(read_mae(out)["Title"]) == ["second"]
+
+
+def test_secondary_molecule_written_as_smiles(tmp_path):
+    df = _mol_frame([_make_mol("primary")])
+    df["Other"] = pd.Series(MoleculeArray([_make_mol("second")]), dtype=MoleculeDtype())
+    out = tmp_path / "sec.mae"
+    df.chem.to_mae(out)
+
+    back = read_mae(out)
+    assert "Other" in back.columns
+    value = back.iloc[0]["Other"]
+    assert isinstance(value, str) and value  # non-empty SMILES string
+
+
+def test_index_written_as_property(tmp_path):
+    df = _mol_frame([_make_mol("a"), _make_mol("b")])
+    df.index = [10, 20]
+    out = tmp_path / "idx.mae"
+    df.chem.to_mae(out, index=True)
+
+    back = read_mae(out)
+    assert list(back["index"].astype(str)) == ["10", "20"]
+
+
+def test_index_custom_tag(tmp_path):
+    df = _mol_frame([_make_mol("a")])
+    out = tmp_path / "idx2.mae"
+    df.chem.to_mae(out, index=True, index_tag="row_id")
+
+    back = read_mae(out)
+    assert "row_id" in back.columns
+
+
+def test_index_collision_with_column_raises(tmp_path):
+    df = _mol_frame([_make_mol("m")], index=pd.array(["dup"], dtype="object"))
+    # data column "index" -> s_user_index; index_tag "index" -> s_user_index -> collision
+    with pytest.raises(ValueError, match="collision"):
+        df.chem.to_mae(tmp_path / "ci.mae", index=True)
+
+
+def test_secondary_molecule_full_key_passthrough(tmp_path):
+    df = _mol_frame([_make_mol("primary")])
+    # A full-key-named secondary column passes through verbatim (no double prefix).
+    df["s_user_ligand"] = pd.Series(MoleculeArray([_make_mol("lig")]), dtype=MoleculeDtype())
+    out = tmp_path / "secfk.mae"
+    df.chem.to_mae(out)
+
+    back = read_mae(out, tags=TAG_ALL)
+    assert "s_user_ligand" in back.columns
+    assert "s_user_s_user_ligand" not in back.columns
+
+
+def test_secondary_collision_with_data_column_raises(tmp_path):
+    df = _mol_frame([_make_mol("primary")])
+    df["Other"] = pd.Series(MoleculeArray([_make_mol("s")]), dtype=MoleculeDtype())  # -> s_user_Other
+    df["s_user_Other"] = pd.array(["x"], dtype="object")  # full key -> s_user_Other -> collision
+    with pytest.raises(ValueError, match="collision"):
+        df.chem.to_mae(tmp_path / "sc.mae")
