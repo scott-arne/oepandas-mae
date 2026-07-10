@@ -208,6 +208,16 @@ def to_mae(
     fp_str = str(fp)
     if append and is_gz(Path(fp_str)):
         raise ValueError("append=True is not supported for gzip-compressed Maestro files")
+
+    # ---- Symlink compression-mismatch guard (applies to both append and create) ----
+    real_target = os.path.realpath(fp_str)
+    if is_gz(Path(fp_str)) != is_gz(Path(real_target)):
+        raise ValueError(
+            f"Output path {fp_str!r} resolves to {real_target!r} with a different "
+            f"compression format; refusing to write to avoid corrupting the target. "
+            f"Pass a path whose extension matches the symlink target."
+        )
+
     config = OEMaestroWriterConfig()
     config.SetMode(WRITE_APPEND if append else WRITE_CREATE)
 
@@ -263,8 +273,7 @@ def to_mae(
     if append:
         _write_rows(fp_str)
     else:
-        # Resolve symlinks so atomic overwrite updates the referent, not the link.
-        real_target = os.path.realpath(fp_str)
+        # Atomic overwrite; real_target already computed for symlink guard above.
         if fp_str.endswith(".mae.gz"):
             suffix = ".mae.gz"
         elif fp_str.endswith(".maegz"):

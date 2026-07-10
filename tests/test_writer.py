@@ -463,3 +463,25 @@ def test_overwrite_through_symlink_updates_target_not_link(tmp_path):
     assert os.path.realpath(link) == os.path.realpath(real)
     from oepandas_mae.reader import read_mae
     assert list(read_mae(real)["Title"]) == ["updated"]  # referent updated
+
+
+def test_symlink_compression_mismatch_raises(tmp_path):
+    import os
+    real = tmp_path / "real.mae.gz"
+    _mol_frame([_make_mol("x")]).chem.to_mae(real)   # real gz target
+    link = tmp_path / "link.mae"                       # .mae link -> .mae.gz target
+    os.symlink(real, link)
+    with pytest.raises(ValueError, match="compression"):
+        _mol_frame([_make_mol("y")]).chem.to_mae(link)
+
+
+def test_symlink_matching_compression_ok(tmp_path):
+    import os
+    real = tmp_path / "real.mae.gz"
+    _mol_frame([_make_mol("x")]).chem.to_mae(real)
+    link = tmp_path / "link.mae.gz"                    # matching gz extension
+    os.symlink(real, link)
+    _mol_frame([_make_mol("y")]).chem.to_mae(link)     # must NOT raise
+    assert link.is_symlink()
+    from oepandas_mae.reader import read_mae
+    assert list(read_mae(real)["Title"]) == ["y"]
