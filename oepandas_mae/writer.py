@@ -1,8 +1,10 @@
 """Maestro file writer for oepandas (``df.chem.to_mae``)."""
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
+import tempfile
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -183,30 +185,51 @@ def to_mae(
     config.SetMode(WRITE_APPEND if append else WRITE_CREATE)
 
     # ---- Write rows ----
-    with OEMaestroWriter(fp_str, config) as writer:
-        for row_index, row in df.iterrows():
-            mol = row[molecule_column]
-            if isinstance(mol, oechem.OEMol):
-                out = oechem.OEGraphMol(mol) if mol.NumConfs() == 1 else oechem.OEMol(mol)
-            elif isinstance(mol, oechem.OEMolBase):
-                out = oechem.OEGraphMol(mol)
-            else:
-                out = oechem.OEGraphMol()
+    def _write_rows(dest_path):
+        with OEMaestroWriter(dest_path, config) as writer:
+            for row_index, row in df.iterrows():
+                mol = row[molecule_column]
+                if isinstance(mol, oechem.OEMol):
+                    out = oechem.OEGraphMol(mol) if mol.NumConfs() == 1 else oechem.OEMol(mol)
+                elif isinstance(mol, oechem.OEMolBase):
+                    out = oechem.OEGraphMol(mol)
+                else:
+                    out = oechem.OEGraphMol()
 
-            # Output properties are driven solely by the DataFrame; drop any SD data
-            # already on the source molecule so omitted/NaN columns cannot leak.
-            oechem.OEClearSDData(out)
+                # Output properties are driven solely by the DataFrame; drop any SD data
+                # already on the source molecule so omitted/NaN columns cannot leak.
+                oechem.OEClearSDData(out)
 
-            if write_title:
-                out.SetTitle(str(row[title_column]))
+                if write_title:
+                    out.SetTitle(str(row[title_column]))
 
-            for col in data_columns:
-                value = row[col]
-                # Scalar-safe: pd.isna on a list-like returns an array, so guard first.
-                if is_scalar(value) and pd.isna(value):
-                    continue
-                key, type_char = data_keys[col]
-                oechem.OESetSDData(out, key, _format_value(value, type_char))
+                for col in data_columns:
+                    value = row[col]
+                    # Scalar-safe: pd.isna on a list-like returns an array, so guard first.
+                    if is_scalar(value) and pd.isna(value):
+                        continue
+                    key, type_char = data_keys[col]
+                    oechem.OESetSDData(out, key, _format_value(value, type_char))
 
-            if not writer.write(out):
-                raise OSError(f"Failed to write molecule at row {row_index} to {fp_str!r}")
+                if not writer.write(out):
+                    raise OSError(f"Failed to write molecule at row {row_index} to {fp_str!r}")
+
+    if append:
+        _write_rows(fp_str)
+    else:
+        target = Path(fp_str)
+        if fp_str.endswith(".mae.gz"):
+            suffix = ".mae.gz"
+        elif fp_str.endswith(".maegz"):
+            suffix = ".maegz"
+        else:
+            suffix = ".mae"
+        fd, tmp_path = tempfile.mkstemp(dir=str(target.parent), prefix="." + target.name + ".", suffix=suffix)
+        os.close(fd)
+        try:
+            _write_rows(tmp_path)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.remove(tmp_path)
+            raise
+        os.replace(tmp_path, fp_str)

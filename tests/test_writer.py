@@ -364,3 +364,16 @@ def test_write_failure_raises(tmp_path, monkeypatch):
     df = _mol_frame([_make_mol("m")])
     with pytest.raises(OSError, match="Failed to write"):
         df.chem.to_mae(tmp_path / "fail.mae")
+
+
+def test_create_mode_failure_preserves_existing_file(tmp_path):
+    out = tmp_path / "existing.mae"
+    _mol_frame([_make_mol("original")]).chem.to_mae(out)
+    original_bytes = out.read_bytes()
+    # An overwrite that fails mid-write (ambiguous boolean string) must not clobber the original.
+    bad = _mol_frame([_make_mol("new")], **{"b_user_flag": pd.array(["maybe"], dtype="object")})
+    with pytest.raises(ValueError):
+        bad.chem.to_mae(out)
+    assert out.read_bytes() == original_bytes
+    # And no leftover temp files in the directory.
+    assert [p.name for p in tmp_path.iterdir()] == ["existing.mae"]
