@@ -485,3 +485,17 @@ def test_symlink_matching_compression_ok(tmp_path):
     assert link.is_symlink()
     from oepandas_mae.reader import read_mae
     assert list(read_mae(real)["Title"]) == ["y"]
+
+
+def test_large_integer_value_raises(tmp_path):
+    df = _mol_frame([_make_mol("m")], count=pd.array([2**31], dtype="int64"))
+    with pytest.raises(ValueError, match="outside the range Maestro"):
+        df.chem.to_mae(tmp_path / "big.mae")
+
+
+def test_int32_max_value_roundtrips(tmp_path):
+    df = _mol_frame([_make_mol("m")], count=pd.array([2**31 - 1], dtype="int64"))
+    out = tmp_path / "maxint.mae"
+    df.chem.to_mae(out)  # boundary value must be accepted
+    back = read_mae(out, tags=TAG_ALL)
+    assert int(back.iloc[0]["i_user_count"]) == 2**31 - 1

@@ -28,6 +28,11 @@ log = logging.getLogger("oepandas-mae")
 
 _DEFAULT_TITLE_COLUMN = "Title"
 
+# Maestro integer ("i_") properties are 32-bit signed; values outside this range
+# overflow silently when the file is read back, so reject them on write.
+_MAESTRO_INT_MIN = -(2**31)
+_MAESTRO_INT_MAX = 2**31 - 1
+
 # One shared converter instance; IsFullMaestroKey is stateless.
 _TAG_CONVERTER = OEMaestroTagConverter()
 
@@ -84,7 +89,14 @@ def _format_value(value, type_char: str) -> str:
             raise ValueError(f"Cannot interpret {value!r} as a boolean for a Maestro 'b_' property")
         return "1" if bool(value) else "0"
     if type_char == "i":
-        return str(int(value))
+        int_value = int(value)
+        if not _MAESTRO_INT_MIN <= int_value <= _MAESTRO_INT_MAX:
+            raise ValueError(
+                f"Integer value {int_value} is outside the range Maestro stores in an "
+                f"integer ('i_') property [{_MAESTRO_INT_MIN}, {_MAESTRO_INT_MAX}]; it would "
+                f"overflow on read. Cast the column to float or string before writing."
+            )
+        return str(int_value)
     if type_char == "r":
         return str(float(value))
     return str(value)
